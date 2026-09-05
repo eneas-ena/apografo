@@ -27,6 +27,28 @@
     --line:rgba(201,162,39,.28);
     --danger:#c2544a;
     --ok:#6fa06a;
+    --btn-bg:#C9A227;
+    --btn-fg:#14203a;
+    --paper:#fbf9f3;
+    --paper-ink:#1b1b1b;
+  }
+  /* tema claro: mesmo par navy/ouro, invertido para papel.
+     O ouro #C9A227 não tem contraste sobre fundo claro, por isso escurece aqui. */
+  html[data-theme="light"]{
+    --navy:#f3efe4;
+    --navy-2:#fffdf7;
+    --navy-3:#eae2cd;
+    --gold:#8a6a12;
+    --gold-soft:#6d530c;
+    --ink:#16203a;
+    --ink-dim:#5b6377;
+    --line:rgba(138,106,18,.32);
+    --danger:#a3392f;
+    --ok:#4a7345;
+    --btn-bg:#8a6a12;
+    --btn-fg:#fdfaf1;
+    --paper:#fffdf7;
+    --paper-ink:#1b1b1b;
   }
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
@@ -59,6 +81,12 @@
     background:none;border:1px solid var(--line);color:var(--gold);
     border-radius:2px;padding:6px 12px;font-family:Cinzel,serif;font-size:12px;cursor:pointer;flex:none;
   }
+  .hdr-tools{display:flex;align-items:center;gap:8px;flex:none}
+  .theme{
+    background:none;border:1px solid var(--line);color:var(--gold);
+    border-radius:2px;width:34px;height:30px;font-size:15px;line-height:1;cursor:pointer;padding:0;
+  }
+  .ver{color:var(--ink-dim);font-size:13px;font-style:normal;letter-spacing:.04em}
 
   section{margin-bottom:26px}
   .rule{font-family:Cinzel,serif;font-size:13px;color:var(--gold);letter-spacing:.12em;
@@ -75,7 +103,7 @@
 
   .btn{
     font-family:Cinzel,serif;font-size:14px;letter-spacing:.06em;
-    background:var(--gold);color:#14203a;border:none;border-radius:3px;
+    background:var(--btn-bg);color:var(--btn-fg);border:none;border-radius:3px;
     padding:13px 18px;cursor:pointer;
   }
   .btn:disabled{opacity:.4;cursor:default}
@@ -102,8 +130,8 @@
   .note{color:var(--ink-dim);font-size:15px;margin:8px 0 0}
   .note.err{color:var(--danger);font-style:normal}
 
-  #preview{background:#fbf9f3;color:#1b1b1b;border-radius:3px;padding:26px 24px;
-           font-size:17px;line-height:1.65;min-height:60px;overflow-wrap:break-word}
+  #preview{background:var(--paper);color:var(--paper-ink);border:1px solid var(--line);border-radius:3px;
+           padding:26px 24px;font-size:17px;line-height:1.65;min-height:60px;overflow-wrap:break-word}
   #preview h2{font-size:21px;margin:22px 0 8px;color:#0F1B33}
   #preview h3{font-size:18px;margin:18px 0 6px;color:#0F1B33}
   #preview p{margin:0 0 10px;text-align:justify}
@@ -140,10 +168,13 @@
       <img src="icone-192.png" alt="">
       <div>
         <h1>Apógrafo</h1>
-        <p>Do papel ao texto editável</p>
+        <p>Do papel ao texto editável <span class="ver" id="verTop"></span></p>
       </div>
     </div>
-    <button class="gear" id="btnCfg">Ajustes</button>
+    <div class="hdr-tools">
+      <button class="theme" id="btnTheme" title="Alternar claro e escuro" aria-label="Alternar claro e escuro">☾</button>
+      <button class="gear" id="btnCfg">Ajustes</button>
+    </div>
   </header>
 
   <section>
@@ -205,7 +236,7 @@
     <p class="note" id="shareHint"></p>
   </section>
 
-  <footer>Apógrafo · uso pessoal</footer>
+  <footer id="rodape">Apógrafo · uso pessoal</footer>
 </div>
 
 <dialog id="dlg">
@@ -239,6 +270,12 @@
 
 const $ = s => document.querySelector(s);
 const state = { mode:'text', pages:[], blocks:[], busy:false };
+
+/* Versão do app. Alterar aqui a cada publicação — aparece no
+   cabeçalho e no rodapé, para conferir se o navegador está
+   servindo a última versão ou uma cópia velha em cache. */
+const VERSION = '1.5';
+const VERSION_DATA = '05/09/2026';
 
 /* Largura útil de uma página A4 com margens de 1 polegada, em twips.
    O Word mede tabela em twips; porcentagem aqui é contada em
@@ -816,8 +853,32 @@ $('#cfgSave').addEventListener('click', ()=>{
   setStatus(cfg.url ? '' : 'Sem o endereço do serviço o app não consegue ler as páginas.', !cfg.url);
 });
 
+/* ---------- tema claro / escuro ---------- */
+const THEME_KEY = 'apografo.tema';
+function aplicarTema(t){
+  document.documentElement.setAttribute('data-theme', t);
+  $('#btnTheme').textContent = t === 'light' ? '☀' : '☾';
+  $('#btnTheme').title = t === 'light' ? 'Mudar para escuro' : 'Mudar para claro';
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if(meta) meta.setAttribute('content', t === 'light' ? '#f3efe4' : '#0F1B33');
+}
+function temaInicial(){
+  const salvo = localStorage.getItem(THEME_KEY);
+  if(salvo) return salvo;
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches
+    ? 'light' : 'dark';
+}
+$('#btnTheme').addEventListener('click', ()=>{
+  const novo = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+  localStorage.setItem(THEME_KEY, novo);
+  aplicarTema(novo);
+});
+
 /* ---------- início ---------- */
 (async function init(){
+  aplicarTema(temaInicial());
+  $('#verTop').textContent = '· v' + VERSION;
+  $('#rodape').textContent = 'Apógrafo v' + VERSION + ' · ' + VERSION_DATA + ' · uso pessoal';
   setMode(localStorage.getItem('apografo.mode') || 'text');
 
   const podeCompartilhar = !!(navigator.canShare &&
