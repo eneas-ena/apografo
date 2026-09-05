@@ -5,8 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0F1B33">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Apógrafo">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Apógrafo</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" type="image/png" href="icone-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
@@ -41,13 +46,15 @@
     border-bottom:1px solid var(--line);
     padding:22px 0 16px;
     margin-bottom:20px;
-    display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
   }
-  header h1{font-size:26px;margin:0;color:var(--gold)}
-  header p{margin:2px 0 0;color:var(--ink-dim);font-size:15px;font-style:italic}
+  .brand{display:flex;align-items:center;gap:12px}
+  .brand img{width:46px;height:46px;border-radius:9px;display:block;flex:none}
+  header h1{font-size:26px;margin:0;color:var(--gold);line-height:1.1}
+  header p{margin:3px 0 0;color:var(--ink-dim);font-size:15px;font-style:italic}
   .gear{
     background:none;border:1px solid var(--line);color:var(--gold);
-    border-radius:2px;padding:6px 12px;font-family:Cinzel,serif;font-size:12px;cursor:pointer;
+    border-radius:2px;padding:6px 12px;font-family:Cinzel,serif;font-size:12px;cursor:pointer;flex:none;
   }
 
   section{margin-bottom:26px}
@@ -126,9 +133,12 @@
 <div class="wrap">
 
   <header>
-    <div>
-      <h1>Apógrafo</h1>
-      <p>Do papel ao texto editável</p>
+    <div class="brand">
+      <img src="icone-192.png" alt="">
+      <div>
+        <h1>Apógrafo</h1>
+        <p>Do papel ao texto editável</p>
+      </div>
     </div>
     <button class="gear" id="btnCfg">Ajustes</button>
   </header>
@@ -160,7 +170,12 @@
   </section>
 
   <section>
-    <button class="btn wide" id="btnRead" disabled>Ler páginas</button>
+    <div class="row">
+      <button class="btn wide" id="btnRead" disabled>Ler páginas</button>
+    </div>
+    <div class="row hidden" id="rowRedo" style="margin-top:10px">
+      <button class="btn ghost wide" id="btnRedo">Reler tudo no modo escolhido</button>
+    </div>
     <div class="prog hidden" id="prog"><i></i></div>
     <p class="note" id="status"></p>
   </section>
@@ -171,11 +186,17 @@
       <input type="text" id="docTitle" placeholder="documento"></label>
     <div id="preview" contenteditable="false"></div>
     <p class="note">Toque em qualquer trecho para corrigir antes de exportar.</p>
-    <div class="row" style="margin-top:14px">
-      <button class="btn" id="btnDocx">Baixar Word</button>
-      <button class="btn" id="btnPdf">Baixar PDF</button>
+
+    <div class="row hidden" id="rowShare" style="margin-top:14px">
+      <button class="btn" id="btnShareDocx">Compartilhar Word</button>
+      <button class="btn" id="btnSharePdf">Compartilhar PDF</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn ghost" id="btnDocx">Baixar Word</button>
+      <button class="btn ghost" id="btnPdf">Baixar PDF</button>
       <button class="btn ghost" id="btnCopy">Copiar texto</button>
     </div>
+    <p class="note" id="shareHint"></p>
   </section>
 
   <footer>Apógrafo · uso pessoal</footer>
@@ -184,7 +205,7 @@
 <dialog id="dlg">
   <h2 class="rule">Ajustes</h2>
   <label class="f"><span>Endereço do serviço de leitura</span>
-    <input type="text" id="cfgUrl" placeholder="https://seu-worker.workers.dev/v1/messages"></label>
+    <input type="text" id="cfgUrl" placeholder="https://seu-worker.workers.dev"></label>
   <label class="f"><span>Modelo</span>
     <input type="text" id="cfgModel" placeholder="claude-sonnet-4-6"></label>
   <label class="f"><span>Chave (deixe vazio se o worker já guarda a sua)</span>
@@ -205,11 +226,18 @@
 <script>
 /* ---------------------------------------------------------------
    Apógrafo — scanner de documentos com leitura por visão
-   Arquivo único. Publicar no GitHub Pages.
+   Arquivo único. Publicar no GitHub Pages junto com:
+   manifest.json, icone-192.png, icone-512.png,
+   apple-touch-icon.png, favicon.ico
 ----------------------------------------------------------------*/
 
 const $ = s => document.querySelector(s);
 const state = { mode:'text', pages:[], blocks:[], busy:false };
+
+/* Largura útil de uma página A4 com margens de 1 polegada, em twips.
+   O Word mede tabela em twips; porcentagem aqui é contada em
+   quinquagésimos de por cento e estraga a largura das colunas. */
+const PAGE_TWIPS = 9026;
 
 /* ---------- configuração ---------- */
 const CFG_KEY = 'apografo.cfg';
@@ -320,7 +348,7 @@ async function rotatePage(id){
 }
 async function removePage(id){
   state.pages = state.pages.filter(p=>p.id!==id);
-  await dbDel(id); renderPages();
+  await dbDel(id); renderPages(); buildDoc();
 }
 function renderPages(){
   const box = $('#pages'); box.innerHTML = '';
@@ -340,9 +368,11 @@ function renderPages(){
       '<span class="st ' + cls + '">' + p.status + '</span>';
     box.appendChild(el);
   });
+  const lidas = state.pages.filter(p=>p.status==='lida').length;
   $('#btnRead').disabled = state.pages.length === 0 || state.busy;
-  $('#btnRead').textContent = state.pages.some(p=>p.status==='lida')
-    ? 'Ler páginas pendentes' : 'Ler páginas';
+  $('#btnRead').textContent = lidas ? 'Ler páginas pendentes' : 'Ler páginas';
+  $('#rowRedo').classList.toggle('hidden', lidas === 0);
+  $('#btnRedo').disabled = state.busy;
 }
 $('#pages').addEventListener('click', e=>{
   const r = e.target.closest('[data-rot]'), d = e.target.closest('[data-del]');
@@ -364,6 +394,8 @@ const P_TEXT = COMMON + ' ' + [
   'Modo texto corrido: una as linhas de um mesmo parágrafo numa única string,',
   'remova o hífen de quebra de linha (ex.: "sal-\\nvação" vira "salvação"),',
   'e descarte cabeçalho, rodapé, número de página e nome do capítulo repetido no topo.',
+  'Se houver tabela na página, transforme cada linha dela num parágrafo curto,',
+  'com as células separadas por travessão.',
   'Notas de rodapé, se houver, viram parágrafos no fim, prefixados pelo número da nota.'
 ].join(' ');
 
@@ -376,6 +408,8 @@ const P_LAYOUT = COMMON + ' ' + [
   '{"type":"field","label":"...","value":"..."}',
   'Modo fiel: preserve a ordem visual de cima para baixo e da esquerda para a direita.',
   'Tabelas viram table com o mesmo número de colunas em todas as linhas (use "" para célula vazia).',
+  'Use table apenas quando houver de fato grade de linhas e colunas; se forem só',
+  'dois blocos de texto lado a lado, use paragraph.',
   'Campos de formulário viram field; se o campo estiver em branco, value é "".',
   'Marque caixas de seleção como [x] ou [ ] dentro do texto.'
 ].join(' ');
@@ -396,7 +430,14 @@ async function readPage(page){
   if(cfg.key){ headers['x-api-key'] = cfg.key; headers['anthropic-version'] = '2023-06-01'; }
 
   const r = await fetch(cfg.url, { method:'POST', headers, body: JSON.stringify(body) });
-  if(!r.ok) throw new Error('O serviço respondeu ' + r.status + '. Confira o endereço e a chave.');
+  if(!r.ok){
+    let det = '';
+    try{
+      const j = JSON.parse(await r.text());
+      det = (j.error && j.error.message) ? ' — ' + j.error.message : '';
+    }catch(e){}
+    throw new Error('O serviço respondeu ' + r.status + det);
+  }
   const data = await r.json();
   const raw = (data.content || [])
     .filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
@@ -414,20 +455,20 @@ function parseBlocks(raw){
   return raw.split(/\n{2,}/).filter(Boolean).map(p => ({type:'paragraph', text:p.trim()}));
 }
 
-/* ---------- ler todas ---------- */
-$('#btnRead').addEventListener('click', async ()=>{
-  const fila = state.pages.filter(p => p.status !== 'lida');
+/* ---------- ler ---------- */
+async function readAll(fila){
   if(!fila.length){ buildDoc(); return; }
-  state.busy = true; $('#btnRead').disabled = true;
+  state.busy = true; renderPages();
+  $('#btnRead').disabled = true;
   $('#prog').classList.remove('hidden');
-  let done = 0, falhas = 0;
+  let done = 0, falhas = 0, ultimoErro = '';
   for(const p of fila){
     setStatus('Lendo página ' + (state.pages.indexOf(p)+1) + ' de ' + state.pages.length + '…');
     try{
       p.blocks = await readPage(p);
       p.status = 'lida'; p.error = '';
     }catch(e){
-      p.status = 'erro'; p.error = e.message; falhas++;
+      p.status = 'erro'; p.error = e.message; falhas++; ultimoErro = e.message;
     }
     await dbPut(p);
     done++;
@@ -436,9 +477,18 @@ $('#btnRead').addEventListener('click', async ()=>{
   }
   state.busy = false;
   $('#prog').classList.add('hidden'); $('#prog i').style.width = '0';
-  const err = state.pages.find(p=>p.status==='erro');
-  setStatus(falhas ? (falhas + ' página(s) não foram lidas. ' + err.error) : '', !!falhas);
+  setStatus(falhas ? (falhas + ' página(s) não foram lidas. ' + ultimoErro) : '', !!falhas);
+  renderPages();
   buildDoc();
+}
+$('#btnRead').addEventListener('click', ()=>{
+  readAll(state.pages.filter(p => p.status !== 'lida'));
+});
+$('#btnRedo').addEventListener('click', async ()=>{
+  for(const p of state.pages){ p.status='pendente'; p.blocks=null; p.error=''; await dbPut(p); }
+  state.blocks = []; $('#secDoc').classList.add('hidden');
+  renderPages();
+  readAll(state.pages.slice());
 });
 
 /* ---------- montar documento ---------- */
@@ -452,7 +502,6 @@ function buildDoc(){
   if(!blocks.length){ $('#secDoc').classList.add('hidden'); return; }
   $('#secDoc').classList.remove('hidden');
   renderPreview();
-  $('#secDoc').scrollIntoView({behavior:'smooth', block:'start'});
 }
 function esc(s){ return String(s==null?'':s)
   .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -491,7 +540,7 @@ $('#preview').addEventListener('input', e=>{
   else b.text = txt;
 });
 
-/* ---------- utilidades de exportação ---------- */
+/* ---------- utilidades ---------- */
 function docName(){
   const t = ($('#docTitle').value || 'documento').trim();
   return t.replace(/[\\/:*?"<>|]/g,'-').slice(0,80) || 'documento';
@@ -522,130 +571,186 @@ function plainText(){
     return b.text || '';
   }).join('\n\n');
 }
+function flash(btn, txt){
+  const old = btn.dataset.label || btn.textContent;
+  btn.dataset.label = old;
+  btn.textContent = txt;
+  setTimeout(()=>{ btn.textContent = btn.dataset.label; }, 1800);
+}
 
-/* ---------- Word ---------- */
-$('#btnDocx').addEventListener('click', async ()=>{
-  const btn = $('#btnDocx'); btn.disabled = true; setStatus('Montando o Word…');
-  try{
-    if(!window.docx) await loadScript([
-      'https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js',
-      'https://unpkg.com/docx@8.5.0/build/index.umd.js'
-    ]);
-    const D = window.docx;
-    const kids = [];
-    state.blocks.forEach(b=>{
-      if(b.type === 'break'){
-        kids.push(new D.Paragraph({ children:[new D.PageBreak()] }));
-      } else if(b.type === 'heading'){
-        kids.push(new D.Paragraph({ text: b.text || '',
-          heading: b.level===3 ? D.HeadingLevel.HEADING_3 : D.HeadingLevel.HEADING_2,
-          spacing:{ before:240, after:120 } }));
-      } else if(b.type === 'list'){
-        (b.items||[]).forEach(it => kids.push(new D.Paragraph({
-          text: it, bullet:{ level:0 }, spacing:{ after:60 } })));
-      } else if(b.type === 'field'){
-        kids.push(new D.Paragraph({ spacing:{ after:80 }, children:[
-          new D.TextRun({ text: (b.label||'') + ': ', bold:true }),
-          new D.TextRun({ text: b.value || '' })
-        ]}));
-      } else if(b.type === 'table'){
-        const rows = (b.rows||[]).filter(r=>Array.isArray(r));
-        if(!rows.length) return;
-        const cols = Math.max(...rows.map(r=>r.length));
-        kids.push(new D.Table({
-          width:{ size:100, type:D.WidthType.PERCENTAGE },
-          rows: rows.map((r,ri)=> new D.TableRow({ children:
-            Array.from({length:cols}, (_,ci)=> new D.TableCell({
-              width:{ size: Math.floor(100/cols), type:D.WidthType.PERCENTAGE },
-              children:[ new D.Paragraph({ children:[
-                new D.TextRun({ text: String(r[ci]==null?'':r[ci]), bold: !!(b.header && ri===0) })
-              ]})]
-            }))
+/* ---------- gerar Word ---------- */
+async function makeDocx(){
+  if(!window.docx) await loadScript([
+    'https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js',
+    'https://unpkg.com/docx@8.5.0/build/index.umd.js'
+  ]);
+  const D = window.docx;
+  const kids = [];
+  state.blocks.forEach(b=>{
+    if(b.type === 'break'){
+      kids.push(new D.Paragraph({ children:[new D.PageBreak()] }));
+    } else if(b.type === 'heading'){
+      kids.push(new D.Paragraph({ text: b.text || '',
+        heading: b.level===3 ? D.HeadingLevel.HEADING_3 : D.HeadingLevel.HEADING_2,
+        spacing:{ before:240, after:120 } }));
+    } else if(b.type === 'list'){
+      (b.items||[]).forEach(it => kids.push(new D.Paragraph({
+        text: it, bullet:{ level:0 }, spacing:{ after:60 } })));
+    } else if(b.type === 'field'){
+      kids.push(new D.Paragraph({ spacing:{ after:80 }, children:[
+        new D.TextRun({ text: (b.label||'') + ': ', bold:true }),
+        new D.TextRun({ text: b.value || '' })
+      ]}));
+    } else if(b.type === 'table'){
+      const rows = (b.rows||[]).filter(r=>Array.isArray(r));
+      if(!rows.length) return;
+      const cols = Math.max(...rows.map(r=>r.length));
+      const cw = Math.floor(PAGE_TWIPS / cols);
+      kids.push(new D.Table({
+        width:{ size: PAGE_TWIPS, type: D.WidthType.DXA },
+        columnWidths: Array.from({length:cols}, ()=> cw),
+        rows: rows.map((r,ri)=> new D.TableRow({
+          tableHeader: !!(b.header && ri===0),
+          children: Array.from({length:cols}, (_,ci)=> new D.TableCell({
+            width:{ size: cw, type: D.WidthType.DXA },
+            margins:{ top:60, bottom:60, left:90, right:90 },
+            children:[ new D.Paragraph({ spacing:{ after:0 }, children:[
+              new D.TextRun({ text: String(r[ci]==null?'':r[ci]),
+                              bold: !!(b.header && ri===0), size:20 })
+            ]})]
           }))
-        }));
-        kids.push(new D.Paragraph({ text:'' }));
-      } else {
-        kids.push(new D.Paragraph({ text: b.text || '',
-          alignment: D.AlignmentType.JUSTIFIED, spacing:{ after:120 } }));
-      }
-    });
-    const doc = new D.Document({
-      styles:{ default:{ document:{ run:{ font:'Georgia', size:24 } } } },
-      sections:[{ properties:{}, children: kids }]
-    });
-    const blob = await D.Packer.toBlob(doc);
-    download(blob, docName() + '.docx');
-    setStatus('');
-  }catch(e){ setStatus(e.message, true); }
-  btn.disabled = false;
-});
-
-/* ---------- PDF ---------- */
-$('#btnPdf').addEventListener('click', async ()=>{
-  const btn = $('#btnPdf'); btn.disabled = true; setStatus('Montando o PDF…');
-  try{
-    if(!window.pdfMake){
-      await loadScript([
-        'https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js',
-        'https://cdn.jsdelivr.net/npm/pdfmake@0.2.7/build/pdfmake.min.js'
-      ]);
-      await loadScript([
-        'https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js',
-        'https://cdn.jsdelivr.net/npm/pdfmake@0.2.7/build/vfs_fonts.js'
-      ]);
+        }))
+      }));
+      kids.push(new D.Paragraph({ text:'', spacing:{ after:120 } }));
+    } else {
+      kids.push(new D.Paragraph({ text: b.text || '',
+        alignment: D.AlignmentType.JUSTIFIED, spacing:{ after:120 } }));
     }
-    const content = [];
-    state.blocks.forEach(b=>{
-      if(b.type === 'break'){ content.push({ text:'', pageBreak:'after' }); }
-      else if(b.type === 'heading'){
-        content.push({ text: b.text||'', fontSize: b.level===3?13:15, bold:true,
-                       margin:[0,12,0,6] });
-      }
-      else if(b.type === 'list'){
-        const key = b.ordered ? 'ol' : 'ul';
-        const o = { margin:[0,0,0,8] }; o[key] = (b.items||[]).map(String);
-        content.push(o);
-      }
-      else if(b.type === 'field'){
-        content.push({ margin:[0,0,0,5], columns:[
-          { width:'35%', text:(b.label||'')+':', bold:true },
-          { width:'*', text:b.value||'' }
-        ]});
-      }
-      else if(b.type === 'table'){
-        const rows = (b.rows||[]).filter(r=>Array.isArray(r));
-        if(!rows.length) return;
-        const cols = Math.max(...rows.map(r=>r.length));
-        content.push({
-          margin:[0,4,0,10],
-          table:{
-            headerRows: b.header ? 1 : 0,
-            widths: Array.from({length:cols}, ()=> '*'),
-            body: rows.map((r,ri)=> Array.from({length:cols}, (_,ci)=>({
-              text: String(r[ci]==null?'':r[ci]),
-              bold: !!(b.header && ri===0), fontSize:9
-            })))
-          },
-          layout:'lightHorizontalLines'
-        });
-      }
-      else content.push({ text: b.text||'', alignment:'justify', margin:[0,0,0,8] });
-    });
-    pdfMake.createPdf({
-      info:{ title: docName() },
-      pageSize:'A4', pageMargins:[52,56,52,56],
-      defaultStyle:{ fontSize:11, lineHeight:1.35 },
-      content
-    }).download(docName() + '.pdf');
-    setStatus('');
-  }catch(e){ setStatus(e.message, true); }
-  btn.disabled = false;
-});
+  });
+  const doc = new D.Document({
+    styles:{
+      default:{ document:{ run:{ font:'Georgia', size:24 } } },
+      paragraphStyles:[
+        { id:'Heading2', name:'Heading 2', basedOn:'Normal', quickFormat:true,
+          run:{ font:'Georgia', size:28, bold:true, color:'0F1B33' } },
+        { id:'Heading3', name:'Heading 3', basedOn:'Normal', quickFormat:true,
+          run:{ font:'Georgia', size:25, bold:true, color:'0F1B33' } }
+      ]
+    },
+    sections:[{ properties:{}, children: kids }]
+  });
+  return await D.Packer.toBlob(doc);
+}
 
-/* ---------- copiar ---------- */
-$('#btnCopy').addEventListener('click', async ()=>{
-  try{ await navigator.clipboard.writeText(plainText()); setStatus('Texto copiado.'); }
-  catch(e){ setStatus('O navegador bloqueou a cópia. Selecione o texto na tela.', true); }
+/* ---------- gerar PDF ---------- */
+async function makePdf(){
+  if(!window.pdfMake){
+    await loadScript([
+      'https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js',
+      'https://cdn.jsdelivr.net/npm/pdfmake@0.2.7/build/pdfmake.min.js'
+    ]);
+    await loadScript([
+      'https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js',
+      'https://cdn.jsdelivr.net/npm/pdfmake@0.2.7/build/vfs_fonts.js'
+    ]);
+  }
+  const content = [];
+  state.blocks.forEach(b=>{
+    if(b.type === 'break'){ content.push({ text:'', pageBreak:'after' }); }
+    else if(b.type === 'heading'){
+      content.push({ text: b.text||'', fontSize: b.level===3?13:15, bold:true,
+                     color:'#0F1B33', margin:[0,12,0,6] });
+    }
+    else if(b.type === 'list'){
+      const key = b.ordered ? 'ol' : 'ul';
+      const o = { margin:[0,0,0,8] }; o[key] = (b.items||[]).map(String);
+      content.push(o);
+    }
+    else if(b.type === 'field'){
+      content.push({ margin:[0,0,0,5], columns:[
+        { width:'35%', text:(b.label||'')+':', bold:true },
+        { width:'*', text:b.value||'' }
+      ]});
+    }
+    else if(b.type === 'table'){
+      const rows = (b.rows||[]).filter(r=>Array.isArray(r));
+      if(!rows.length) return;
+      const cols = Math.max(...rows.map(r=>r.length));
+      content.push({
+        margin:[0,4,0,10],
+        table:{
+          headerRows: b.header ? 1 : 0,
+          widths: Array.from({length:cols}, ()=> '*'),
+          body: rows.map((r,ri)=> Array.from({length:cols}, (_,ci)=>({
+            text: String(r[ci]==null?'':r[ci]),
+            bold: !!(b.header && ri===0), fontSize:9
+          })))
+        },
+        layout:'lightHorizontalLines'
+      });
+    }
+    else content.push({ text: b.text||'', alignment:'justify', margin:[0,0,0,8] });
+  });
+  const def = {
+    info:{ title: docName() },
+    pageSize:'A4', pageMargins:[52,56,52,56],
+    defaultStyle:{ fontSize:11, lineHeight:1.35 },
+    content
+  };
+  return new Promise(res => pdfMake.createPdf(def).getBlob(res));
+}
+
+/* ---------- exportar ---------- */
+const MIME_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+async function exportar(btn, tipo, compartilhar){
+  btn.disabled = true;
+  const label = btn.dataset.label || btn.textContent;
+  btn.dataset.label = label;
+  btn.textContent = 'Montando…';
+  try{
+    const blob = tipo === 'docx' ? await makeDocx() : await makePdf();
+    const nome = docName() + '.' + tipo;
+    if(compartilhar){
+      const file = new File([blob], nome, { type: tipo==='docx' ? MIME_DOCX : 'application/pdf' });
+      if(navigator.canShare && navigator.canShare({ files:[file] })){
+        btn.textContent = label;
+        await navigator.share({ files:[file], title: docName() });
+        setStatus('');
+      }else{
+        download(blob, nome);
+        btn.textContent = label;
+        flash(btn, 'Baixado');
+        setStatus('Este navegador não compartilha arquivos. O documento foi baixado.', true);
+      }
+    }else{
+      download(blob, nome);
+      btn.textContent = label;
+      flash(btn, 'Baixado');
+      setStatus('');
+    }
+  }catch(e){
+    btn.textContent = label;
+    if(e && e.name === 'AbortError') setStatus('');   // usuário fechou a folha de compartilhamento
+    else setStatus(e.message, true);
+  }
+  btn.disabled = false;
+}
+
+$('#btnDocx').addEventListener('click', e => exportar(e.currentTarget, 'docx', false));
+$('#btnPdf').addEventListener('click',  e => exportar(e.currentTarget, 'pdf',  false));
+$('#btnShareDocx').addEventListener('click', e => exportar(e.currentTarget, 'docx', true));
+$('#btnSharePdf').addEventListener('click',  e => exportar(e.currentTarget, 'pdf',  true));
+
+$('#btnCopy').addEventListener('click', async e=>{
+  const btn = e.currentTarget;
+  try{
+    await navigator.clipboard.writeText(plainText());
+    flash(btn, 'Copiado');
+  }catch(err){
+    flash(btn, 'Não deu');
+    setStatus('O navegador bloqueou a cópia. Selecione o texto na tela e copie à mão.', true);
+  }
 });
 
 /* ---------- interface ---------- */
@@ -661,7 +766,7 @@ function setMode(m){
   $('#mLayout').setAttribute('aria-pressed', m==='layout');
   localStorage.setItem('apografo.mode', m);
   const lidas = state.pages.filter(p=>p.status==='lida').length;
-  if(lidas) setStatus('Modo alterado. As páginas já lidas mantêm o formato anterior — remova e leia de novo para aplicar.');
+  if(lidas) setStatus('Modo alterado. Use "Reler tudo" para aplicar às páginas já lidas.');
 }
 $('#btnCam').addEventListener('click', ()=>$('#inCam').click());
 $('#btnFile').addEventListener('click', ()=>$('#inFile').click());
@@ -686,9 +791,15 @@ $('#cfgSave').addEventListener('click', ()=>{
 /* ---------- início ---------- */
 (async function init(){
   setMode(localStorage.getItem('apografo.mode') || 'text');
-  try{
-    state.pages = await dbAll();
-  }catch(e){ state.pages = []; }
+
+  const podeCompartilhar = !!(navigator.canShare &&
+      navigator.canShare({ files:[ new File([new Blob(['x'])], 'a.txt', {type:'text/plain'}) ] }));
+  $('#rowShare').classList.toggle('hidden', !podeCompartilhar);
+  $('#shareHint').textContent = podeCompartilhar
+    ? 'Compartilhar abre a folha do sistema: dá para salvar em Arquivos, mandar no WhatsApp ou abrir no Word.'
+    : 'Os arquivos baixados ficam na pasta de transferências do navegador.';
+
+  try{ state.pages = await dbAll(); }catch(e){ state.pages = []; }
   renderPages();
   if(state.pages.some(p=>p.status==='lida')) buildDoc();
   if(!cfg.url) setStatus('Primeiro passo: abra Ajustes e informe o endereço do serviço de leitura.');
