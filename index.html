@@ -37,7 +37,10 @@
     font-size:18px;
     line-height:1.6;
     -webkit-text-size-adjust:100%;
+    padding-top:env(safe-area-inset-top);
     padding-bottom:env(safe-area-inset-bottom);
+    padding-left:env(safe-area-inset-left);
+    padding-right:env(safe-area-inset-right);
   }
   h1,h2,h3,.display{font-family:Cinzel,Georgia,serif;font-weight:600;letter-spacing:.04em}
   .wrap{max-width:820px;margin:0 auto;padding:0 18px}
@@ -167,6 +170,9 @@
     <input type="file" id="inFile" accept="image/*" multiple class="hidden">
     <div id="pages" class="pages"></div>
     <div id="pagesEmpty" class="empty">Nenhuma página ainda. Fotografe a primeira.</div>
+    <div class="row hidden" id="rowClear" style="margin-top:10px">
+      <button class="btn ghost wide" id="btnClear">Começar do zero</button>
+    </div>
   </section>
 
   <section>
@@ -281,6 +287,14 @@ async function dbDel(id){
     t.oncomplete = res; t.onerror = () => rej(t.error);
   });
 }
+async function dbClear(){
+  const d = await db();
+  return new Promise((res,rej)=>{
+    const t = d.transaction(STORE,'readwrite');
+    t.objectStore(STORE).clear();
+    t.oncomplete = res; t.onerror = () => rej(t.error);
+  });
+}
 
 /* ---------- imagem: redimensiona e gira ---------- */
 function fileToImage(file){
@@ -373,6 +387,8 @@ function renderPages(){
   $('#btnRead').textContent = lidas ? 'Ler páginas pendentes' : 'Ler páginas';
   $('#rowRedo').classList.toggle('hidden', lidas === 0);
   $('#btnRedo').disabled = state.busy;
+  $('#rowClear').classList.toggle('hidden', state.pages.length === 0);
+  $('#btnClear').disabled = state.busy;
 }
 $('#pages').addEventListener('click', e=>{
   const r = e.target.closest('[data-rot]'), d = e.target.closest('[data-del]');
@@ -483,6 +499,18 @@ async function readAll(fila){
 }
 $('#btnRead').addEventListener('click', ()=>{
   readAll(state.pages.filter(p => p.status !== 'lida'));
+});
+$('#btnClear').addEventListener('click', async ()=>{
+  if(state.busy) return;
+  const n = state.pages.length;
+  if(!confirm('Apagar ' + n + (n>1 ? ' páginas' : ' página') + ' e o documento montado? Isso não tem volta.')) return;
+  await dbClear();
+  state.pages = []; state.blocks = [];
+  $('#secDoc').classList.add('hidden');
+  $('#preview').innerHTML = '';
+  $('#docTitle').value = '';
+  renderPages();
+  setStatus('Pronto para um documento novo.');
 });
 $('#btnRedo').addEventListener('click', async ()=>{
   for(const p of state.pages){ p.status='pendente'; p.blocks=null; p.error=''; await dbPut(p); }
