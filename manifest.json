@@ -2,8 +2,6 @@
   "name": "Apógrafo",
   "short_name": "Apógrafo",
   "description": "Do papel ao texto editável.",
-  "start_url": "./apografo.html",
-  "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0F1B33",
